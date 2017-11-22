@@ -65,6 +65,7 @@ struct gf_iatt {
         unsigned int       ia_mtime_nsec;
         unsigned int       ia_ctime;      /* last status change time */
         unsigned int       ia_ctime_nsec;
+	unsigned int	   ia_lba;
 };
 
 

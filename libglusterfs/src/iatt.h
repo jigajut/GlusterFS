@@ -65,6 +65,7 @@ struct iatt {
         uint32_t     ia_mtime_nsec;
         uint32_t     ia_ctime;      /* last status change time */
         uint32_t     ia_ctime_nsec;
+	uint32_t     ia_lba;
 };
 
 

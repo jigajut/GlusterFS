@@ -312,6 +312,7 @@ gf_stat_to_iatt (struct gf_iatt *gf_stat, struct iatt *iatt)
 	iatt->ia_mtime_nsec = gf_stat->ia_mtime_nsec ;
 	iatt->ia_ctime = gf_stat->ia_ctime ;
 	iatt->ia_ctime_nsec = gf_stat->ia_ctime_nsec ;
+	iatt->ia_lba = gf_stat->ia_lba;
 }
 
 
@@ -338,6 +339,7 @@ gf_stat_from_iatt (struct gf_iatt *gf_stat, struct iatt *iatt)
 	gf_stat->ia_mtime_nsec = iatt->ia_mtime_nsec ;
 	gf_stat->ia_ctime = iatt->ia_ctime ;
 	gf_stat->ia_ctime_nsec = iatt->ia_ctime_nsec ;
+	gf_stat->ia_lba	= iatt->ia_lba;
 }
 
 static inline int

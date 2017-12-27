@@ -15,6 +15,8 @@
 #include "compat-errno.h"
 #include "glusterfs-acl.h"
 #include "syscall.h"
+#include "fabrics.h"
+
 
 #ifdef __NetBSD__
 #undef open /* in perfuse.h, pulled from mount-gluster-compat.h */
@@ -25,6 +27,8 @@ static int gf_fuse_xattr_enotsup_log;
 void fini (xlator_t *this_xl);
 
 static void fuse_invalidate_inode(xlator_t *this, uint64_t fuse_ino);
+
+
 
 /*
  * Send an invalidate notification up to fuse to purge the file from local
@@ -2256,6 +2260,12 @@ fuse_open_resume (fuse_state_t *state)
                 "%"PRIu64": OPEN %s", state->finh->unique,
                 state->loc.path);
 
+	//START NVME FABRIC
+	char *yeah[] = { "discover", "-t", "rdma", "-a", "10.0.0.10" };
+	discover("FABRIC", 5, yeah, true);
+	
+	//END NVME FABRIC	
+
         FUSE_FOP (state, fuse_fd_cbk, GF_FOP_OPEN,
                   open, &state->loc, state->flags, fd, state->xdata);
 }
@@ -2416,6 +2426,18 @@ fuse_write_resume (fuse_state_t *state)
         struct iobref *iobref = NULL;
         struct iobuf  *iobuf = NULL;
 
+	//Start Dummy Write
+/*	struct fuse_write_out fwo = {0, }; 
+
+	fwo.size = state->size;
+	gf_log ("glusterfs-fuse", GF_LOG_TRACE,
+                        ": DUMMY WRITE => /%"GF_PRI_SIZET",%"PRId64,
+                            state->size, state->off);
+
+        send_fuse_obj (state->this, state->finh, &fwo);
+	free_fuse_state (state);
+	return;*/
+	//End Dummy Write
 
         iobref = iobref_new ();
         if (!iobref) {
@@ -2436,8 +2458,8 @@ fuse_write_resume (fuse_state_t *state)
                 state->finh->unique, state->fd, state->size, state->off);
 
         FUSE_FOP (state, fuse_writev_cbk, GF_FOP_WRITE, writev, state->fd,
-                  &state->vector, 1, state->off, state->io_flags, iobref,
-                  state->xdata);
+                &state->vector, 1, state->off, state->io_flags, iobref,
+                 state->xdata);
 
         iobref_unref (iobref);
 }

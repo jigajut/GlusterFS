@@ -16,7 +16,7 @@
 #include "glusterfs-acl.h"
 #include "syscall.h"
 #include "fabrics.h"
-
+#include "nvme-ioctl.h"
 
 #ifdef __NetBSD__
 #undef open /* in perfuse.h, pulled from mount-gluster-compat.h */
@@ -1004,6 +1004,7 @@ fuse_fd_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
         fuse_private_t       *priv   = NULL;
         int32_t               ret    = 0;
         struct fuse_open_out  foo    = {0, };
+	uint64_t lba;	//JMC
 
         priv = this->private;
         state = frame->root->state;
@@ -1046,9 +1047,15 @@ fuse_fd_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 #endif
                 }
 
+		dict_get_uint64(xdata, "LBA", &lba); // dict jmc
+
                 gf_log ("glusterfs-fuse", GF_LOG_TRACE,
-                        "%"PRIu64": %s() %s => %p", frame->root->unique,
-                        gf_fop_list[frame->root->op], state->loc.path, fd);
+                        "%"PRIu64": %s() %s => %p JMC %d", frame->root->unique,
+                        gf_fop_list[frame->root->op], state->loc.path, fd, lba);
+	
+//		finh->lba = lba; //JMC
+//		foo.lba = lba;
+		priv->lba = lba;
 
                 ret = fuse_fd_inherit_directio (this, fd, &foo);
                 if (ret < 0) {
@@ -2260,11 +2267,15 @@ fuse_open_resume (fuse_state_t *state)
                 "%"PRIu64": OPEN %s", state->finh->unique,
                 state->loc.path);
 
-	//START NVME FABRIC
-	char *yeah[] = { "discover", "-t", "rdma", "-a", "10.0.0.10" };
-	discover("FABRIC", 5, yeah, true);
+	//START NVME FABRIC JMC
 	
-	//END NVME FABRIC	
+	if(!priv->nvme_open) {
+		char *yeah[] = { "discover", "-t", "rdma", "-a", "10.0.0.10" };
+		discover("FABRIC", 5, yeah, true);
+		priv->nvme_open = true;
+	}
+	
+	//END NVME FABRIC JMC	
 
         FUSE_FOP (state, fuse_fd_cbk, GF_FOP_OPEN,
                   open, &state->loc, state->flags, fd, state->xdata);
@@ -2425,19 +2436,7 @@ fuse_write_resume (fuse_state_t *state)
 {
         struct iobref *iobref = NULL;
         struct iobuf  *iobuf = NULL;
-
-	//Start Dummy Write
-/*	struct fuse_write_out fwo = {0, }; 
-
-	fwo.size = state->size;
-	gf_log ("glusterfs-fuse", GF_LOG_TRACE,
-                        ": DUMMY WRITE => /%"GF_PRI_SIZET",%"PRId64,
-                            state->size, state->off);
-
-        send_fuse_obj (state->this, state->finh, &fwo);
-	free_fuse_state (state);
-	return;*/
-	//End Dummy Write
+	int fd;
 
         iobref = iobref_new ();
         if (!iobref) {
@@ -2453,9 +2452,32 @@ fuse_write_resume (fuse_state_t *state)
         iobuf = ((fuse_private_t *) (state->this->private))->iobuf;
         iobref_add (iobref, iobuf);
 
+	//Start Write JMC
+	fd = open_dev("/dev/nvme2n1");
+	if(fd < 0)
+		return;
+	
+	nvme_write(fd, state->lba, 1, 0, 0, 0, 0, 0, state->vector.iov_base, NULL);
+		
+//	discover
+//	io_submit	
+	struct fuse_write_out fwo = {0, }; 
+
+	fwo.size = state->size;
+	gf_log ("glusterfs-fuse", GF_LOG_TRACE,
+                        ": DUMMY WRITE => /%"GF_PRI_SIZET",%"PRId64,
+                            state->size, state->off);
+
+        send_fuse_obj (state->this, state->finh, &fwo);
+	free_fuse_state (state);
+	return;
+	//End  Write
+
+
+
         gf_log ("glusterfs-fuse", GF_LOG_TRACE,
-                "%"PRIu64": WRITE (%p, size=%"GF_PRI_SIZET", offset=%"PRId64")",
-                state->finh->unique, state->fd, state->size, state->off);
+                "%"PRIu64": WRITE (%p, size=%"GF_PRI_SIZET", offset=%"PRId64" LBA=%d %s)",
+                state->finh->unique, state->fd, state->size, state->off, state->lba, state->vector.iov_base);
 
         FUSE_FOP (state, fuse_writev_cbk, GF_FOP_WRITE, writev, state->fd,
                 &state->vector, 1, state->off, state->io_flags, iobref,
@@ -2485,7 +2507,8 @@ fuse_write (xlator_t *this, fuse_in_header_t *finh, void *msg)
         state->fd   = fd;
         state->size = fwi->size;
         state->off  = fwi->offset;
-
+	state->lba  = priv->lba;
+//	state->lba  = fwi->lba;	//JMC
         /* lets ignore 'fwi->write_flags', but just consider 'fwi->flags' */
 #if FUSE_KERNEL_MINOR_VERSION >= 9
         state->io_flags = fwi->flags;
@@ -5540,6 +5563,7 @@ init (xlator_t *this_xl)
         this_xl->private = (void *) priv;
         priv->mount_point = NULL;
         priv->fd = -1;
+	priv->nvme_open = false; // JMC	
 
         INIT_LIST_HEAD (&priv->invalidate_list);
         pthread_cond_init (&priv->invalidate_cond, NULL);

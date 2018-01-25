@@ -21,6 +21,9 @@
 
 #include "nvme-ioctl.h"
 
+static struct stat nvme_stat;
+
+
 static int nvme_verify_chr(int fd)
 {
 	static struct stat nvme_stat;
@@ -579,5 +582,29 @@ int nvme_sec_recv(int fd, __u32 nsid, __u8 nssf, __u16 spsp,
 	err = nvme_submit_admin_passthru(fd, &cmd);
 	if (!err && result)
 		*result = cmd.result;
+	return err;
+}
+
+int open_dev(const char *dev)
+{
+	int err, fd;
+
+	printf("The device is %s\n", dev);
+
+	err = open(dev, O_RDONLY);
+	if (err < 0)
+		goto perror;
+	fd = err;
+
+	err = fstat(fd, &nvme_stat);
+	if (err < 0)
+		goto perror;
+	if (!S_ISCHR(nvme_stat.st_mode) && !S_ISBLK(nvme_stat.st_mode)) {
+		fprintf(stderr, "%s is not a block or character device\n", dev);
+		return -ENODEV;
+	}
+	return fd;
+ perror:
+	perror(dev);
 	return err;
 }

@@ -1522,6 +1522,13 @@ server_open_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
         rpcsvc_request_t    *req      = NULL;
         gfs3_open_rsp        rsp      = {0,};
 
+	uint64_t theLBA;
+	
+	if(!xdata) //JMC
+		xdata = dict_new(); //JMC
+
+	dict_set_uint64(xdata,"LBA", fd->lba); //JMC
+
         GF_PROTOCOL_DICT_SERIALIZE (this, xdata, &rsp.xdata.xdata_val,
                                     rsp.xdata.xdata_len, op_errno, out);
 
@@ -1545,6 +1552,11 @@ out:
         rsp.op_errno  = gf_errno_to_error (op_errno);
 
         req = frame->local;
+
+	dict_get_uint64(xdata,"LBA", &theLBA);
+	gf_msg (this->name, GF_LOG_TRACE, 0, PS_MSG_OPEN_INFO, "THE LBA IS %d %s %d\n", theLBA, rsp.xdata.xdata_val, rsp.xdata.xdata_len);
+
+
         server_submit_reply (frame, req, &rsp, NULL, 0, NULL,
                              (xdrproc_t)xdr_gfs3_open_rsp);
         GF_FREE (rsp.xdata.xdata_val);

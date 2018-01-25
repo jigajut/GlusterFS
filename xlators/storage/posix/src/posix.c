@@ -23,6 +23,7 @@
 #include <pthread.h>
 #include <ftw.h>
 #include <sys/stat.h>
+#include <sys/ioctl.h>
 #include <signal.h>
 #include <sys/uio.h>
 #include <unistd.h>
@@ -58,6 +59,7 @@
 #include "posix-messages.h"
 #include "events.h"
 #include "posix-gfid-path.h"
+#include "fiemap.h"
 
 extern char *marker_xattrs[];
 #define ALIGN_SIZE 4096
@@ -102,6 +104,8 @@ extern char *marker_xattrs[];
 #define PATH_SET_TIMESPEC_OR_TIMEVAL(path, tv) \
         (lutimes (path, tv))
 #endif
+
+#define FS_IOC_FIEMAP _IOWR('f', 11, struct fiemap)
 
 static char *disallow_removexattrs[] = {
         GF_XATTR_VOL_ID_KEY,
@@ -225,7 +229,13 @@ posix_lookup (call_frame_t *frame, xlator_t *this,
         VALIDATE_OR_GOTO (loc, out);
 
         priv = this->private;
-
+	
+//JMC
+	union { struct fiemap f; char c[4096]; } fiemap_buf;
+	struct fiemap *fiemap = &fiemap_buf.f;
+	struct fiemap_extent *extent;
+	int32_t _fd = -1, flags = 0;
+//END JMC
         /* The Hidden directory should be for housekeeping purpose and it
            should not get any gfid on it */
         if (__is_root_gfid (loc->pargfid) && loc->name
@@ -260,6 +270,7 @@ posix_lookup (call_frame_t *frame, xlator_t *this,
 
         op_errno = errno;
 
+
         if (op_ret == -1) {
                 if (op_errno != ENOENT) {
                         gf_msg (this->name, GF_LOG_WARNING, op_errno,
@@ -274,7 +285,35 @@ posix_lookup (call_frame_t *frame, xlator_t *this,
 
         if (xdata && (op_ret == 0)) {
                 xattr = posix_xattr_fill (this, real_path, loc, NULL, -1, xdata,
-                                          &buf);
+                                          &buf);	
+
+/*		//JMC
+		flags = O_RDWR | O_EXCL;
+		_fd = sys_open (real_path, flags, 0);
+	        if (_fd == -1) {
+        	        op_ret   = -1;
+                	op_errno = errno;
+	                gf_msg (this->name, GF_LOG_ERROR, errno, P_MSG_FILE_OP_FAILED,
+        	                "open on %s, flags: %d", real_path, flags);
+                	goto out;
+	        }
+	
+		fiemap->fm_start = 0;
+		fiemap->fm_flags = FIEMAP_FLAG_SYNC;
+		fiemap->fm_extent_count=1;
+		fiemap->fm_length = FIEMAP_MAX_OFFSET;
+
+		int s = ioctl(_fd, FS_IOC_FIEMAP, fiemap);
+		if (s!=0) {
+			gf_msg (this->name, GF_LOG_TRACE, s, P_MSG_FILE_OP_FAILED,
+                	        "JMC ioctl failure");
+			goto out;
+		}
+		extent = fiemap->fm_extents;
+		buf.ia_lba = extent->fe_physical/512;
+		gf_msg (this->name, GF_LOG_TRACE, s, P_MSG_FILE_OP_FAILED,
+			"First LBA IS %d %d %lu %llu %d\n", _fd, buf.ia_lba, extent->fe_physical, fiemap->fm_mapped_extents);
+		//end JMC */
         }
 
         if (priv->update_pgfid_nlinks) {
@@ -3274,8 +3313,14 @@ posix_open (call_frame_t *frame, xlator_t *this,
         struct posix_fd      *pfd          = NULL;
         struct posix_private *priv         = NULL;
         struct iatt           stbuf        = {0, };
-
-        DECLARE_OLD_FS_ID_VAR;
+	
+        // JMC
+	union { struct fiemap f; char c[4096]; } fiemap_buf;
+	struct fiemap *fiemap = &fiemap_buf.f;
+	struct fiemap_extent *extent;
+	//END JMC
+	
+	DECLARE_OLD_FS_ID_VAR;
 
         VALIDATE_OR_GOTO (frame, out);
         VALIDATE_OR_GOTO (this, out);
@@ -3308,6 +3353,11 @@ posix_open (call_frame_t *frame, xlator_t *this,
         if (priv->o_direct)
                 flags |= O_DIRECT;
 
+	//JMC
+	gf_msg (this->name, GF_LOG_TRACE, errno, P_MSG_FILE_OP_FAILED,
+                        "open on %s, flags: %d", real_path, flags);
+	//END JMC LBA
+	
         _fd = sys_open (real_path, flags, 0);
         if (_fd == -1) {
                 op_ret   = -1;
@@ -3316,7 +3366,31 @@ posix_open (call_frame_t *frame, xlator_t *this,
                         "open on %s, flags: %d", real_path, flags);
                 goto out;
         }
+	//JMC GET LBA
 
+
+	fiemap->fm_start = 0;
+	fiemap->fm_flags = FIEMAP_FLAG_SYNC;
+	fiemap->fm_extent_count=1;
+	fiemap->fm_length = FIEMAP_MAX_OFFSET;
+
+	
+	int s = ioctl(_fd, FS_IOC_FIEMAP, fiemap);
+
+	if (s!=0) {
+		gf_msg (this->name, GF_LOG_TRACE, s, P_MSG_FILE_OP_FAILED,
+                        "JMC ioctl failure");
+		goto out;
+	}
+	extent = fiemap->fm_extents;
+	fd->lba = extent->fe_physical/512;
+	dict_set_uint64(xdata, "LBA", extent->fe_physical/512);
+ 
+	gf_msg (this->name, GF_LOG_TRACE, s, P_MSG_FILE_OP_FAILED,
+			"First LBA IS %d %d %lu %llu %d\n", _fd, fd->lba, extent->fe_physical, fiemap->fm_mapped_extents);
+	//printf("%llu\n", extent->fe_physical/512);
+	//END JMC LBA
+	
         pfd = GF_CALLOC (1, sizeof (*pfd), gf_posix_mt_posix_fd);
         if (!pfd) {
                 op_errno = errno;

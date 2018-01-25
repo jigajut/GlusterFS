@@ -371,6 +371,12 @@ server_post_open (call_frame_t *frame, xlator_t *this,
         fd_no = gf_fd_unused_get (serv_ctx->fdtable, fd);
         rsp->fd = fd_no;
 
+	rsp->lba = fd->lba; //JMC
+	gf_msg (this->name, GF_LOG_TRACE, 0,
+                       PS_MSG_SERVER_CTX_GET_FAILED, "LBA is %llu", fd->lba);
+
+
+
         return 0;
 }
 
@@ -400,7 +406,6 @@ server_post_opendir (call_frame_t *frame, xlator_t *this,
         fd_ref (fd);
         fd_no = gf_fd_unused_get (serv_ctx->fdtable, fd);
         rsp->fd = fd_no;
-
         return 0;
 }
 

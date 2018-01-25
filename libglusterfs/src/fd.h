@@ -51,6 +51,7 @@ struct _fd {
         gf_boolean_t      anonymous; /* fd which does not have counterpart open
                                         fd on backend (server for client, posix
                                         for server). */
+	quad_t lba;
 };
 typedef struct _fd fd_t;
 

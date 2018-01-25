@@ -281,6 +281,7 @@ struct fuse_open_in {
 struct fuse_open_out {
         __u64   fh;
         __u32   open_flags;
+//	__u64	lba;	//JMC
         __u32   padding;
 };
 
@@ -402,6 +403,7 @@ struct fuse_in_header {
         __u32   gid;
         __u32   pid;
         __u32   padding;
+//	__u64	lba;	//JMC
 };
 
 struct fuse_out_header {

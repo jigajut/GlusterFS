@@ -1866,6 +1866,10 @@ bd_writev (call_frame_t *frame, xlator_t *this, fd_t *fd, struct iovec *vector,
         size = bdatt->iatt.ia_size;
 
         op_ret = __bd_pwritev (_fd, vector, count, offset, size);
+
+	gf_log (this->name, GF_LOG_TRACE, "writing offset %"PRIu64 " size %"PRIu64, offset, size);
+
+
         if (op_ret < 0) {
                 op_errno = -op_ret;
                 op_ret = -1;

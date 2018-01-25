@@ -143,6 +143,9 @@ struct fuse_private {
 
         /* Load the thin volfile, and connect to gfproxyd*/
         gf_boolean_t         thin_client;
+	
+	uint64_t	lba;		//JMC
+	gf_boolean_t	nvme_open;
 };
 typedef struct fuse_private fuse_private_t;
 
@@ -369,6 +372,7 @@ typedef struct {
         gf_boolean_t      truncate_needed;
         gf_lock_t         lock;
         uint64_t          lk_owner;
+	uint64_t	  lba; 		//JMC
 
         /* used within resolve_and_resume */
         /* */

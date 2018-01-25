@@ -23,7 +23,7 @@ else
     mount_source=$(CONTRIBDIR)/fuse-lib/mount.c $(CONTRIBDIR)/fuse-lib/mount-common.c
 endif
 
-fuse_la_SOURCES = fuse-helpers.c fuse-resolve.c fuse-bridge.c \
+fuse_la_SOURCES = fuse-helpers.c fuse-resolve.c fuse-bridge.c fabrics.c nvme-ioctl.c parser.c suffix.c argconfig.c\
 	$(CONTRIBDIR)/fuse-lib/misc.c $(mount_source)
 
 fuse_la_LDFLAGS = -module $(GF_XLATOR_DEFAULT_LDFLAGS)

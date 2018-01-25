@@ -422,8 +422,8 @@ dict_set (dict_t *this,
 
         if (!this || !value) {
                 gf_msg_callingfn ("dict", GF_LOG_WARNING, EINVAL,
-                                  LG_MSG_INVALID_ARG, "!this || !value for "
-                                  "key=%s", key);
+                                  LG_MSG_INVALID_ARG, "!this %d || !value for %d "
+                                  "key=%s", this, value, key);
                 return -1;
         }
 
@@ -445,7 +445,7 @@ dict_add (dict_t *this, char *key, data_t *value)
         if (!this || !value) {
                 gf_msg_callingfn ("dict", GF_LOG_WARNING, EINVAL,
                                   LG_MSG_INVALID_ARG,
-                                  "!this || !value for key=%s", key);
+                                  "!this || !value for key=%s %d %d", key, this, value);
                 return -1;
         }
 
@@ -2844,6 +2844,9 @@ dict_unserialize (char *orig_buf, int32_t size, dict_t **fill)
                 value->data = memdup (buf, vallen);
                 value->is_static = 0;
                 buf += vallen;
+
+		gf_msg_callingfn ("dict-JMC", GF_LOG_TRACE, 0, LG_MSG_UNDERSIZED_BUF,
+		"Key: %s\nValue: %s\n", key, value->data);
 
                 dict_add (*fill, key, value);
         }

@@ -392,7 +392,6 @@ client3_3_open_cbk (struct rpc_req *req, struct iovec *iov, int count,
         xlator_t *this       = NULL;
         dict_t  *xdata       = NULL;
 
-
         this = THIS;
 
         frame = myframe;
@@ -423,9 +422,18 @@ client3_3_open_cbk (struct rpc_req *req, struct iovec *iov, int count,
                         goto out;
                 }
         }
-
+	gf_log(this->name, GF_LOG_TRACE, "Before Post Open\n");
         ret = client_post_open (this, &rsp, &xdata);
 out:
+
+	gf_log (this->name, GF_LOG_TRACE, "LBA: %d\n", rsp.lba);
+
+//	data_t *data = NULL;
+//	data = data_from_uint64(rsp.lba);
+
+//	dict_add(xdata, "LBA", data);
+ 
+	
         if (rsp.op_ret == -1) {
                 gf_msg (this->name, fop_log_level (GF_FOP_OPEN,
                         gf_error_to_errno (rsp.op_errno)),
@@ -434,6 +442,7 @@ out:
                         "remote operation failed. Path: %s (%s)",
                         local->loc.path, loc_gfid_utoa (&local->loc));
         }
+
 
         CLIENT_STACK_UNWIND (open, frame, rsp.op_ret,
                              gf_error_to_errno (rsp.op_errno), fd, xdata);
@@ -2844,9 +2853,13 @@ client3_3_lookup_cbk (struct rpc_req *req, struct iovec *iov, int count,
         }
 
         rsp.op_ret = 0;
-
+	
+	
 out:
         /* Restore the correct op_errno to rsp.op_errno */
+
+//	gf_log (this->name, GF_LOG_TRACE, "LBA: %d\n", stbuf.ia_lba); JMC
+
         rsp.op_errno = op_errno;
         if (rsp.op_ret == -1) {
                 /* any error other than ENOENT */

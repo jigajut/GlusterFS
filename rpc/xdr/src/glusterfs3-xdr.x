@@ -249,6 +249,7 @@ struct gfs3_readlink_req {
         int    op_ret;
         int    op_errno;
 	quad_t fd;
+	uint64_t lba;
         opaque   xdata<>; /* Extra data */
 };
 

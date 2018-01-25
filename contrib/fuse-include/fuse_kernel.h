@@ -484,7 +484,9 @@ struct fuse_create_in {
 struct fuse_open_out {
 	uint64_t	fh;
 	uint32_t	open_flags;
+//	uint64_t	lba;	//JMC
 	uint32_t	padding;
+
 };
 
 struct fuse_release_in {
@@ -521,6 +523,7 @@ struct fuse_write_in {
 	uint64_t	lock_owner;
 	uint32_t	flags;
 	uint32_t	padding;
+//	uint64_t	lba;	//JMC
 };
 
 struct fuse_write_out {
@@ -683,6 +686,7 @@ struct fuse_in_header {
 	uint32_t	gid;
 	uint32_t	pid;
 	uint32_t	padding;
+//	uint64_t	lba; //JMC
 };
 
 struct fuse_out_header {

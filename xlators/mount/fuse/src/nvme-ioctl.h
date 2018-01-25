@@ -115,4 +115,5 @@ int nvme_sec_recv(int fd, __u32 nsid, __u8 nssf, __u16 spsp,
 int nvme_subsystem_reset(int fd);
 int nvme_reset_controller(int fd);
 
+int open_dev(const char *dev);
 #endif				/* _NVME_LIB_H */

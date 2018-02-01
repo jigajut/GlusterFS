@@ -873,7 +873,7 @@ static int disconnect_subsys(char *nqn, char *ctrl)
 /*
  * Returns the number of controllers successfully disconnected.
  */
-static int disconnect_by_nqn(char *nqn)
+int disconnect_by_nqn(char *nqn)
 {
 	struct dirent **devices = NULL;
 	int i, n, ret = 0;

@@ -2200,6 +2200,7 @@ fuse_create (xlator_t *this, fuse_in_header_t *finh, void *msg)
         if (priv->proto_minor < 12)
                 name = (char *)((struct fuse_open_in *)msg + 1);
 #endif
+	priv->lba = 0;
 
         GET_STATE (this, finh, state);
 
@@ -2209,6 +2210,13 @@ fuse_create (xlator_t *this, fuse_in_header_t *finh, void *msg)
 
         state->mode = fci->mode;
         state->flags = fci->flags;
+
+	if(!priv->nvme_open) {
+		char *yeah[] = { "discover", "-t", "rdma", "-a", "10.0.0.10" };
+
+		discover("FABRIC", 5, yeah, true);
+		priv->nvme_open = true;
+	}
 
 #if FUSE_KERNEL_MINOR_VERSION >=12
         priv = this->private;
@@ -2270,9 +2278,18 @@ fuse_open_resume (fuse_state_t *state)
 	//START NVME FABRIC JMC
 	
 	if(!priv->nvme_open) {
+		
+			
 		char *yeah[] = { "discover", "-t", "rdma", "-a", "10.0.0.10" };
+
+
 		discover("FABRIC", 5, yeah, true);
 		priv->nvme_open = true;
+
+//		gf_log ("glusterfs-fuse", GF_LOG_TRACE,
+//              "%"PRIu64": OPEN %s", state->finh->unique,
+//                state->loc.path);
+
 	}
 	
 	//END NVME FABRIC JMC	
@@ -2311,14 +2328,14 @@ fuse_readv_cbk (call_frame_t *frame, void *cookie, xlator_t *this,
 
         state = frame->root->state;
         finh = state->finh;
-
+	
         fuse_log_eh_fop(this, state, frame, op_ret, op_errno);
 
         if (op_ret >= 0) {
                 gf_log ("glusterfs-fuse", GF_LOG_TRACE,
-                        "%"PRIu64": READ => %d/%"GF_PRI_SIZET",%"PRId64"/%"PRIu64,
+                        "%"PRIu64": READ => %d/%"GF_PRI_SIZET",%"PRId64"/%"PRIu64"count: %d vector: %s size: %d",
                         frame->root->unique,
-                        op_ret, state->size, state->off, stbuf->ia_size);
+                        op_ret, state->size, state->off, stbuf->ia_size, count, vector->iov_base, vector->iov_len);
 
                 iov_out = GF_CALLOC (count + 1, sizeof (*iov_out),
                                      gf_fuse_mt_iovec);
@@ -2354,8 +2371,48 @@ fuse_readv_resume (fuse_state_t *state)
                 "%"PRIu64": READ (%p, size=%zu, offset=%"PRIu64")",
                 state->finh->unique, state->fd, state->size, state->off);
 
-        FUSE_FOP (state, fuse_readv_cbk, GF_FOP_READ, readv, state->fd,
-                  state->size, state->off, state->io_flags, state->xdata);
+        struct iovec *iov_out = NULL;
+	struct fuse_out_header fouh = {0, };
+	struct fuse_in_header_t *finh = NULL;
+	 fuse_private_t *priv = NULL;
+	int32_t count = 1, fd = state->nvme_fd;	
+	xlator_t *this = state->this;
+	finh = state->finh;
+	priv = this->private;
+
+		 gf_log ("glusterfs-fuse", GF_LOG_TRACE,"Opening /dev/nvme1n1");
+	while(fd < 0) {
+	fd = open_dev("/dev/nvme1n1");
+	priv->nvme_fd = fd;
+
+		 gf_log ("glusterfs-fuse", GF_LOG_TRACE,"Done /dev/nvme1n1 %d", fd);
+	}
+	
+	iov_out = GF_CALLOC(count +1, sizeof (*iov_out), gf_fuse_mt_iovec);	
+	if  (iov_out) {
+		fouh.error = 0;
+		iov_out[0].iov_base = &fouh;
+		
+		iov_out[1].iov_base = GF_MALLOC(state->size, gf_fuse_mt_iov_base); 	
+
+		gf_log ("glusterfs-fuse", GF_LOG_TRACE,"About to nvme_read LBA: %d", state->lba);
+
+		nvme_read(fd, state->lba+(state->off/512), 1, 0, 0, 0, 0, 0, iov_out[1].iov_base, NULL);
+		iov_out[1].iov_len = strlen(iov_out[1].iov_base);
+
+		 gf_log ("glusterfs-fuse", GF_LOG_TRACE,
+                "LBA %d %s %d size: %d, offset: %d, fd: %d", state->lba, iov_out[1].iov_base, iov_out[1].iov_len,state->size, state->off, state->fd);
+
+		send_fuse_iov (this, finh, iov_out, count + 1);
+
+		GF_FREE (iov_out);
+	}
+	else
+		send_fuse_err (this, finh, ENOMEM);
+	
+	free_fuse_state (state);
+      // FUSE_FOP (state, fuse_readv_cbk, GF_FOP_READ, readv, state->fd,
+        //          state->size, state->off, state->io_flags, state->xdata);
 }
 
 static void
@@ -2373,7 +2430,7 @@ fuse_readv (xlator_t *this, fuse_in_header_t *finh, void *msg)
 
         fd = FH_TO_FD (fri->fh);
         state->fd = fd;
-
+	
         fuse_resolve_fd_init (state, &state->resolve, fd);
 
         /* See comment by similar code in fuse_settatr */
@@ -2382,6 +2439,8 @@ fuse_readv (xlator_t *this, fuse_in_header_t *finh, void *msg)
         if (priv->proto_minor >= 9 && fri->read_flags & FUSE_READ_LOCKOWNER)
                 state->lk_owner = fri->lock_owner;
 #endif
+	state->lba = priv->lba; //JMC
+	state->nvme_fd = priv->nvme_fd;
 
         state->size = fri->size;
         state->off = fri->offset;
@@ -2436,7 +2495,8 @@ fuse_write_resume (fuse_state_t *state)
 {
         struct iobref *iobref = NULL;
         struct iobuf  *iobuf = NULL;
-	int fd;
+	int fd = state->nvme_fd;
+	fuse_private_t *priv = state->this->private;
 
         iobref = iobref_new ();
         if (!iobref) {
@@ -2452,27 +2512,28 @@ fuse_write_resume (fuse_state_t *state)
         iobuf = ((fuse_private_t *) (state->this->private))->iobuf;
         iobref_add (iobref, iobuf);
 
-	//Start Write JMC
-	fd = open_dev("/dev/nvme2n1");
-	if(fd < 0)
-		return;
+	/*/Start Write JMC
+	if(state->lba) {
+		if(fd < 0) {	
+			fd = open_dev("/dev/nvme1n1");
+			if(fd < 0)
+				return;
+			priv->nvme_fd = fd;
+		}
 	
-	nvme_write(fd, state->lba, 1, 0, 0, 0, 0, 0, state->vector.iov_base, NULL);
+		nvme_write(fd, state->lba+(state->off/512), (state->vector.iov_len % 512) ? (state->vector.iov_len/512)+1 : state->vector.iov_len/512 , 0, 0, 0, 0, 0, state->vector.iov_base, NULL);
 		
-//	discover
-//	io_submit	
-	struct fuse_write_out fwo = {0, }; 
+		struct fuse_write_out fwo = {0, }; 
 
-	fwo.size = state->size;
-	gf_log ("glusterfs-fuse", GF_LOG_TRACE,
-                        ": DUMMY WRITE => /%"GF_PRI_SIZET",%"PRId64,
-                            state->size, state->off);
+		fwo.size = state->size;
+		gf_log ("glusterfs-fuse", GF_LOG_TRACE,
+                	        ": DUMMY LBA: %d DUMMY WRITE => /%"GF_PRI_SIZET",%"PRId64"fd %d base %s",               state->lba, state->size, state->off, fd, state->vector.iov_base);
 
-        send_fuse_obj (state->this, state->finh, &fwo);
-	free_fuse_state (state);
-	return;
-	//End  Write
-
+	        send_fuse_obj (state->this, state->finh, &fwo);
+		free_fuse_state (state);
+		return;
+	}
+	//End  Write*/
 
 
         gf_log ("glusterfs-fuse", GF_LOG_TRACE,
@@ -2508,6 +2569,7 @@ fuse_write (xlator_t *this, fuse_in_header_t *finh, void *msg)
         state->size = fwi->size;
         state->off  = fwi->offset;
 	state->lba  = priv->lba;
+	state->nvme_fd = priv->nvme_fd;
 //	state->lba  = fwi->lba;	//JMC
         /* lets ignore 'fwi->write_flags', but just consider 'fwi->flags' */
 #if FUSE_KERNEL_MINOR_VERSION >= 9
@@ -4103,6 +4165,12 @@ fuse_init (xlator_t *this, fuse_in_header_t *finh, void *msg)
 
         priv = this->private;
 
+	//JMC INIT
+	priv->lba = 0;
+	disconnect_by_nqn("coolio");
+	priv->nvme_open  = false;
+	priv->nvme_fd = -1;
+
         if (priv->init_recvd) {
                 gf_log ("glusterfs-fuse", GF_LOG_ERROR,
                         "got INIT after first message");
@@ -5564,6 +5632,7 @@ init (xlator_t *this_xl)
         priv->mount_point = NULL;
         priv->fd = -1;
 	priv->nvme_open = false; // JMC	
+	priv->nvme_fd = -1;
 
         INIT_LIST_HEAD (&priv->invalidate_list);
         pthread_cond_init (&priv->invalidate_cond, NULL);

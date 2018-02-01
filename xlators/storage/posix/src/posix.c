@@ -3743,6 +3743,19 @@ posix_writev (call_frame_t *frame, xlator_t *this, fd_t *fd,
 			is_append = 1;
 	}
 
+	int idx, allocate_ret=1;
+	for(idx = 0; idx < count; idx++) {
+		if(vector[idx].iov_len > 4096) {
+			allocate_ret  = posix_fallocate(_fd, 0, vector[idx].iov_len);
+			break;
+		}
+	}
+	if(allocate_ret != -1)
+		allocate_ret = posix_fallocate(_fd,0,4096);
+
+	
+			 //NEEDED FOR NVME
+		
         op_ret = __posix_writev (_fd, vector, count, offset,
                                  (pfd->flags & O_DIRECT));
 

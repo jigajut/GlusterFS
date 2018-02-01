@@ -146,6 +146,7 @@ struct fuse_private {
 	
 	uint64_t	lba;		//JMC
 	gf_boolean_t	nvme_open;
+	int32_t	nvme_fd;
 };
 typedef struct fuse_private fuse_private_t;
 
@@ -373,7 +374,7 @@ typedef struct {
         gf_lock_t         lock;
         uint64_t          lk_owner;
 	uint64_t	  lba; 		//JMC
-
+	int32_t	nvme_fd;
         /* used within resolve_and_resume */
         /* */
         fuse_resolve_t resolve;
@@ -396,7 +397,7 @@ typedef struct {
         uuid_t         gfid;
         uint32_t       io_flags;
         int32_t        fd_no;
-
+	
         gf_seek_what_t whence;
 } fuse_state_t;
 

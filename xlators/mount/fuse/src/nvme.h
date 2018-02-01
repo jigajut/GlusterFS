@@ -127,5 +127,5 @@ extern const char *devicename;
 
 int __id_ctrl(int argc, char **argv, struct command *cmd, struct plugin *plugin, void (*vs)(__u8 *vs, struct json_object *root));
 int	validate_output_format(char *format);
-
+int scaan_dev_filter(const struct dirent *);
 #endif /* _NVME_H */

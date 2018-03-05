@@ -2498,6 +2498,31 @@ fuse_write_resume (fuse_state_t *state)
 	int fd = state->nvme_fd;
 	fuse_private_t *priv = state->this->private;
 
+	//Start Write JMC
+	//
+/*	if(state->lba) {
+		if(fd < 0) {	
+			fd = open_dev("/dev/nvme1n1");
+			if(fd < 0)
+				return;
+			priv->nvme_fd = fd;
+		}
+	
+		//nvme_write(fd, state->lba+(state->off/512), (state->vector.iov_len % 512) ? (state->vector.iov_len/512)+1 : state->vector.iov_len/512 , 0, 0, 0, 0, 0, state->vector.iov_base, NULL);
+		
+		struct fuse_write_out fwo = {0, }; 
+
+		fwo.size = state->size;
+//		gf_log ("glusterfs-fuse", GF_LOG_TRACE,
+  //              	        ": DUMMY LBA: %d DUMMY WRITE => /%"GF_PRI_SIZET",%"PRId64"fd %d base %s",               state->lba, state->size, state->off, fd, state->vector.iov_base);
+
+	        send_fuse_obj (state->this, state->finh, &fwo);
+		free_fuse_state (state);
+		return;
+	}
+	//End  Write*/
+
+
         iobref = iobref_new ();
         if (!iobref) {
                 gf_log ("glusterfs-fuse", GF_LOG_ERROR,
@@ -2511,29 +2536,6 @@ fuse_write_resume (fuse_state_t *state)
 
         iobuf = ((fuse_private_t *) (state->this->private))->iobuf;
         iobref_add (iobref, iobuf);
-
-	/*/Start Write JMC
-	if(state->lba) {
-		if(fd < 0) {	
-			fd = open_dev("/dev/nvme1n1");
-			if(fd < 0)
-				return;
-			priv->nvme_fd = fd;
-		}
-	
-		nvme_write(fd, state->lba+(state->off/512), (state->vector.iov_len % 512) ? (state->vector.iov_len/512)+1 : state->vector.iov_len/512 , 0, 0, 0, 0, 0, state->vector.iov_base, NULL);
-		
-		struct fuse_write_out fwo = {0, }; 
-
-		fwo.size = state->size;
-		gf_log ("glusterfs-fuse", GF_LOG_TRACE,
-                	        ": DUMMY LBA: %d DUMMY WRITE => /%"GF_PRI_SIZET",%"PRId64"fd %d base %s",               state->lba, state->size, state->off, fd, state->vector.iov_base);
-
-	        send_fuse_obj (state->this, state->finh, &fwo);
-		free_fuse_state (state);
-		return;
-	}
-	//End  Write*/
 
 
         gf_log ("glusterfs-fuse", GF_LOG_TRACE,

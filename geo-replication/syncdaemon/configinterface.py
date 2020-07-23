@@ -38,8 +38,8 @@ CONFIGS = (
     ("peersrx . .",
      "georep_session_working_dir",
      "",
-     GLUSTERD_WORKDIR + "/geo-replication/${mastervol}_${remotehost}_"
-     "${slavevol}/"),
+     GLUSTERD_WORKDIR + "/geo-replication/${mainvol}_${remotehost}_"
+     "${subordinatevol}/"),
     ("peersrx .",
      "gluster_params",
      "aux-gfid-mount xlator-option=\*-dht.assert-no-child-down=true",
@@ -56,40 +56,40 @@ CONFIGS = (
     ("peersrx . .",
      "changelog_log_file",
      "",
-     "${iprefix}/log/glusterfs/geo-replication/${mastervol}"
-     "/${eSlave}${local_id}-changes.log"),
+     "${iprefix}/log/glusterfs/geo-replication/${mainvol}"
+     "/${eSubordinate}${local_id}-changes.log"),
     ("peersrx . .",
      "working_dir",
-     LOCALSTATEDIR + "/run/gluster/${mastervol}/${eSlave}",
-     "${iprefix}/lib/misc/glusterfsd/${mastervol}/${eSlave}"),
+     LOCALSTATEDIR + "/run/gluster/${mainvol}/${eSubordinate}",
+     "${iprefix}/lib/misc/glusterfsd/${mainvol}/${eSubordinate}"),
     ("peersrx . .",
      "ignore_deletes",
      "true",
      "false"),
     ("peersrx . .",
      "pid-file",
-     GLUSTERD_WORKDIR + "/geo-replication/${mastervol}_${remotehost}_"
-     "${slavevol}/${eSlave}.pid",
-     GLUSTERD_WORKDIR + "/geo-replication/${mastervol}_${remotehost}_"
-     "${slavevol}/monitor.pid"),
+     GLUSTERD_WORKDIR + "/geo-replication/${mainvol}_${remotehost}_"
+     "${subordinatevol}/${eSubordinate}.pid",
+     GLUSTERD_WORKDIR + "/geo-replication/${mainvol}_${remotehost}_"
+     "${subordinatevol}/monitor.pid"),
     ("peersrx . .",
      "state-file",
-     GLUSTERD_WORKDIR + "/geo-replication/${mastervol}_${remotehost}_"
-     "${slavevol}/${eSlave}.status",
-     GLUSTERD_WORKDIR + "/geo-replication/${mastervol}_${remotehost}_"
-     "${slavevol}/monitor.status"),
+     GLUSTERD_WORKDIR + "/geo-replication/${mainvol}_${remotehost}_"
+     "${subordinatevol}/${eSubordinate}.status",
+     GLUSTERD_WORKDIR + "/geo-replication/${mainvol}_${remotehost}_"
+     "${subordinatevol}/monitor.status"),
     ("peersrx .",
      "log_file",
-     "${iprefix}/log/glusterfs/geo-replication-slaves/${session_owner}:${eSlave}.log",
-     "${iprefix}/log/glusterfs/geo-replication-slaves/${session_owner}:${local_node}${local_id}.${slavevol}.log"),
+     "${iprefix}/log/glusterfs/geo-replication-subordinates/${session_owner}:${eSubordinate}.log",
+     "${iprefix}/log/glusterfs/geo-replication-subordinates/${session_owner}:${local_node}${local_id}.${subordinatevol}.log"),
     ("peersrx .",
      "log_file_mbr",
-     "${iprefix}/log/glusterfs/geo-replication-slaves/mbr/${session_owner}:${eSlave}.log",
-     "${iprefix}/log/glusterfs/geo-replication-slaves/mbr/${session_owner}:${local_node}${local_id}.${slavevol}.log"),
+     "${iprefix}/log/glusterfs/geo-replication-subordinates/mbr/${session_owner}:${eSubordinate}.log",
+     "${iprefix}/log/glusterfs/geo-replication-subordinates/mbr/${session_owner}:${local_node}${local_id}.${subordinatevol}.log"),
     ("peersrx .",
      "gluster_log_file",
-     "${iprefix}/log/glusterfs/geo-replication-slaves/${session_owner}:${eSlave}.gluster.log",
-     "${iprefix}/log/glusterfs/geo-replication-slaves/${session_owner}:${local_node}${local_id}.${slavevol}.gluster.log")
+     "${iprefix}/log/glusterfs/geo-replication-subordinates/${session_owner}:${eSubordinate}.gluster.log",
+     "${iprefix}/log/glusterfs/geo-replication-subordinates/${session_owner}:${local_node}${local_id}.${subordinatevol}.gluster.log")
 )
 
 
@@ -130,9 +130,9 @@ def upgrade_config_file(path, confdata):
             config.set(sec, opt, newval)
 
     # To convert from old peers section format to new peers section format.
-    # Old format: peers gluster://<master ip>:<master vol> \
-    #              ssh://root@<slave ip>:gluster://<master ip>:<slave vol>
-    # New format: peers <master vol name> <slave vol name>
+    # Old format: peers gluster://<main ip>:<main vol> \
+    #              ssh://root@<subordinate ip>:gluster://<main ip>:<subordinate vol>
+    # New format: peers <main vol name> <subordinate vol name>
     for old_sect in config.sections():
         if old_sect.startswith("peers "):
             peers_data = old_sect.split(" ")
@@ -141,7 +141,7 @@ def upgrade_config_file(path, confdata):
             new_sect = "peers {0} {1}".format(mvol, svol)
 
             if old_sect == new_sect:
-                # Already in new format "peers mastervol slavevol"
+                # Already in new format "peers mainvol subordinatevol"
                 continue
 
             # Create new section if not exists
@@ -216,7 +216,7 @@ class GConffile(object):
         - .path: location of config file
         - .config: underlying ConfigParser instance
         - .peers: on behalf of whom we flatten .config
-          (master, or master-slave url pair)
+          (main, or main-subordinate url pair)
         - .auxdicts: template subtituents
         """
         self.peers = peers

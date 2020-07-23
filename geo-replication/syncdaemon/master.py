@@ -81,8 +81,8 @@ def edct(op, **ed):
 
 # The API!
 
-def gmaster_builder(excrawl=None):
-    """produce the GMaster class variant corresponding
+def gmain_builder(excrawl=None):
+    """produce the GMain class variant corresponding
        to sync mode"""
     this = sys.modules[__name__]
     modemixin = gconf.special_sync_mode
@@ -93,17 +93,17 @@ def gmaster_builder(excrawl=None):
     logging.debug(lf('setting up change detection mode',
                      mode=changemixin))
     modemixin = getattr(this, modemixin.capitalize() + 'Mixin')
-    crawlmixin = getattr(this, 'GMaster' + changemixin.capitalize() + 'Mixin')
+    crawlmixin = getattr(this, 'GMain' + changemixin.capitalize() + 'Mixin')
     sendmarkmixin = boolify(
         gconf.use_rsync_xattrs) and SendmarkRsyncMixin or SendmarkNormalMixin
     purgemixin = boolify(
         gconf.ignore_deletes) and PurgeNoopMixin or PurgeNormalMixin
     syncengine = boolify(gconf.use_tarssh) and TarSSHEngine or RsyncEngine
 
-    class _GMaster(crawlmixin, modemixin, sendmarkmixin,
+    class _GMain(crawlmixin, modemixin, sendmarkmixin,
                    purgemixin, syncengine):
         pass
-    return _GMaster
+    return _GMain
 
 
 # Mixin classes that implement the data format
@@ -138,21 +138,21 @@ class NormalMixin(object):
     def xtime_geq(xt0, xt1):
         return xt0 >= xt1
 
-    def make_xtime_opts(self, is_master, opts):
+    def make_xtime_opts(self, is_main, opts):
         if not 'create' in opts:
-            opts['create'] = is_master
+            opts['create'] = is_main
         if not 'default_xtime' in opts:
             opts['default_xtime'] = URXTIME
 
     def xtime_low(self, rsc, path, **opts):
-        if rsc == self.master:
+        if rsc == self.main:
             xt = rsc.server.xtime(path, self.uuid)
         else:
             xt = rsc.server.stime(path, self.uuid)
             if isinstance(xt, int) and xt == ENODATA:
                 xt = rsc.server.xtime(path, self.uuid)
                 if not isinstance(xt, int):
-                    self.slave.server.set_stime(path, self.uuid, xt)
+                    self.subordinate.server.set_stime(path, self.uuid, xt)
         if isinstance(xt, int) and xt != ENODATA:
             return xt
         if xt == ENODATA or xt < self.volmark:
@@ -176,7 +176,7 @@ class NormalMixin(object):
         else:
             # send keep-alives more frequently to
             # avoid a delay in announcing our volume info
-            # to slave if it becomes established in the
+            # to subordinate if it becomes established in the
             # meantime
             gap = min(10, gap)
         return (vi, gap)
@@ -191,15 +191,15 @@ class NormalMixin(object):
     def need_sync(self, e, xte, xtrd):
         return xte > xtrd
 
-    def set_slave_xtime(self, path, mark):
-        self.slave.server.set_stime(path, self.uuid, mark)
-        # self.slave.server.set_xtime_remote(path, self.uuid, mark)
+    def set_subordinate_xtime(self, path, mark):
+        self.subordinate.server.set_stime(path, self.uuid, mark)
+        # self.subordinate.server.set_xtime_remote(path, self.uuid, mark)
 
 
 class PartialMixin(NormalMixin):
 
-    """a variant tuned towards operation with a master
-       that has partial info of the slave (brick typically)"""
+    """a variant tuned towards operation with a main
+       that has partial info of the subordinate (brick typically)"""
 
     def xtime_reversion_hook(self, path, xtl, xtr):
         pass
@@ -211,7 +211,7 @@ class RecoverMixin(NormalMixin):
        of ignoring non-indexed files"""
 
     @staticmethod
-    def make_xtime_opts(is_master, opts):
+    def make_xtime_opts(is_main, opts):
         if not 'create' in opts:
             opts['create'] = False
         if not 'default_xtime' in opts:
@@ -241,7 +241,7 @@ class SendmarkRsyncMixin(object):
 class PurgeNormalMixin(object):
 
     def purge_missing(self, path, names):
-        self.slave.server.purge(path, names)
+        self.subordinate.server.purge(path, names)
 
 
 class PurgeNoopMixin(object):
@@ -321,9 +321,9 @@ class RsyncEngine(object):
         self.syncdata_wait()
 
 
-class GMasterCommon(object):
+class GMainCommon(object):
 
-    """abstract class impementling master role"""
+    """abstract class impementling main role"""
 
     KFGN = 0
     KNAT = 1
@@ -331,15 +331,15 @@ class GMasterCommon(object):
     def get_sys_volinfo(self):
         """query volume marks on fs root
 
-        err out on multiple foreign masters
+        err out on multiple foreign mains
         """
         fgn_vis, nat_vi = (
-            self.master.server.aggregated.foreign_volume_infos(),
-            self.master.server.aggregated.native_volume_info())
+            self.main.server.aggregated.foreign_volume_infos(),
+            self.main.server.aggregated.native_volume_info())
         fgn_vi = None
         if fgn_vis:
             if len(fgn_vis) > 1:
-                raise GsyncdError("cannot work with multiple foreign masters")
+                raise GsyncdError("cannot work with multiple foreign mains")
             fgn_vi = fgn_vis[0]
         return fgn_vi, nat_vi
 
@@ -354,13 +354,13 @@ class GMasterCommon(object):
             return self.volinfo['volume_mark']
 
     def get_entry_stime(self):
-        data = self.slave.server.entry_stime(".", self.uuid)
+        data = self.subordinate.server.entry_stime(".", self.uuid)
         if isinstance(data, int):
             data = None
         return data
 
     def get_data_stime(self):
-        data = self.slave.server.stime(".", self.uuid)
+        data = self.subordinate.server.stime(".", self.uuid)
         if isinstance(data, int):
             data = None
         return data
@@ -371,25 +371,25 @@ class GMasterCommon(object):
         as of amending, we can create missing xtime, or
         determine a valid value if what we get is expired
         (as of the volume mark expiry); way of amendig
-        depends on @opts and on subject of query (master
-        or slave).
+        depends on @opts and on subject of query (main
+        or subordinate).
         """
         if a:
             rsc = a[0]
         else:
-            rsc = self.master
-        self.make_xtime_opts(rsc == self.master, opts)
+            rsc = self.main
+        self.make_xtime_opts(rsc == self.main, opts)
         return self.xtime_low(rsc, path, **opts)
 
-    def __init__(self, master, slave):
-        self.master = master
-        self.slave = slave
+    def __init__(self, main, subordinate):
+        self.main = main
+        self.subordinate = subordinate
         self.jobtab = {}
         if boolify(gconf.use_tarssh):
-            self.syncer = Syncer(slave, self.slave.tarssh, [2])
+            self.syncer = Syncer(subordinate, self.subordinate.tarssh, [2])
         else:
             # partial transfer (cf. rsync(1)), that's normal
-            self.syncer = Syncer(slave, self.slave.rsync, [23, 24])
+            self.syncer = Syncer(subordinate, self.subordinate.rsync, [23, 24])
         # crawls vs. turns:
         # - self.crawls is simply the number of crawl() invocations on root
         # - one turn is a maximal consecutive sequence of crawls so that each
@@ -397,7 +397,7 @@ class GMasterCommon(object):
         # - self.turns is the number of turns since start
         # - self.total_turns is a limit so that if self.turns reaches it, then
         #   we exit (for diagnostic purposes)
-        # so, eg., if the master fs changes unceasingly, self.turns will remain
+        # so, eg., if the main fs changes unceasingly, self.turns will remain
         # 0.
         self.crawls = 0
         self.turns = 0
@@ -419,7 +419,7 @@ class GMasterCommon(object):
             def keep_alive():
                 while True:
                     vi, gap = cls.keepalive_payload_hook(timo, timo * 0.5)
-                    cls.slave.server.keep_alive(vi)
+                    cls.subordinate.server.keep_alive(vi)
                     time.sleep(gap)
             t = Thread(target=keep_alive)
             t.start()
@@ -446,7 +446,7 @@ class GMasterCommon(object):
                 raise
 
         fd = None
-        bname = str(self.uuid) + "_" + str(gconf.slave_id) + "_subvol_" \
+        bname = str(self.uuid) + "_" + str(gconf.subordinate_id) + "_subvol_" \
             + str(gconf.subvol_num) + ".lock"
         mgmt_lock_dir = os.path.join(gconf.meta_volume_mnt, "geo-rep")
         path = os.path.join(mgmt_lock_dir, bname)
@@ -492,7 +492,7 @@ class GMasterCommon(object):
 
     def should_crawl(self):
         if not boolify(gconf.use_meta_volume):
-            return gconf.glusterd_uuid in self.master.server.node_uuid()
+            return gconf.glusterd_uuid in self.main.server.node_uuid()
 
         if not os.path.ismount(gconf.meta_volume_mnt):
             logging.error("Meta-volume is not mounted. Worker Exiting...")
@@ -522,23 +522,23 @@ class GMasterCommon(object):
         # no need to maintain volinfo state machine.
         # in a cascading setup, each geo-replication session is
         # independent (ie. 'volume-mark' and 'xtime' are not
-        # propogated). This is because the slave's xtime is now
-        # stored on the master itself. 'volume-mark' just identifies
+        # propogated). This is because the subordinate's xtime is now
+        # stored on the main itself. 'volume-mark' just identifies
         # that we are in a cascading setup and need to enable
         # 'geo-replication.ignore-pid-check' option.
         volinfo_sys = self.volinfo_hook()
         self.volinfo = volinfo_sys[self.KNAT]
-        inter_master = volinfo_sys[self.KFGN]
-        logging.debug("%s master with volume id %s ..." %
-                      (inter_master and "intermediate" or "primary",
+        inter_main = volinfo_sys[self.KFGN]
+        logging.debug("%s main with volume id %s ..." %
+                      (inter_main and "intermediate" or "primary",
                        self.uuid))
         gconf.configinterface.set('volume_id', self.uuid)
         if self.volinfo:
             if self.volinfo['retval']:
-                logging.warn(lf("master cluster's info may not be valid",
+                logging.warn(lf("main cluster's info may not be valid",
                                 error=self.volinfo['retval']))
         else:
-            raise GsyncdError("master volinfo unavailable")
+            raise GsyncdError("main volinfo unavailable")
         self.lastreport['time'] = time.time()
 
         t0 = time.time()
@@ -565,16 +565,16 @@ class GMasterCommon(object):
                 self.status.set_passive()
                 # bring up _this_ brick to the cluster stime
                 # which is min of cluster (but max of the replicas)
-                brick_stime = self.xtime('.', self.slave)
-                cluster_stime = self.master.server.aggregated.stime_mnt(
-                    '.', '.'.join([str(self.uuid), str(gconf.slave_id)]))
+                brick_stime = self.xtime('.', self.subordinate)
+                cluster_stime = self.main.server.aggregated.stime_mnt(
+                    '.', '.'.join([str(self.uuid), str(gconf.subordinate_id)]))
                 logging.debug(lf("Crawl info",
                                  cluster_stime=cluster_stime,
                                  brick_stime=brick_stime))
 
                 if not isinstance(cluster_stime, int):
                     if brick_stime < cluster_stime:
-                        self.slave.server.set_stime(
+                        self.subordinate.server.set_stime(
                             self.FLAT_DIR_HIERARCHY, self.uuid, cluster_stime)
                         self.upd_stime(cluster_stime)
                         # Purge all changelogs available in processing dir
@@ -658,13 +658,13 @@ class GMasterCommon(object):
         return succeed
 
     def sendmark(self, path, mark, adct=None):
-        """update slave side xtime for @path to master side xtime
+        """update subordinate side xtime for @path to main side xtime
 
         also can send a setattr payload (see Server.setattr).
         """
         if adct:
-            self.slave.server.setattr(path, adct)
-        self.set_slave_xtime(path, mark)
+            self.subordinate.server.setattr(path, adct)
+        self.set_subordinate_xtime(path, mark)
 
 
 class XCrawlMetadata(object):
@@ -675,7 +675,7 @@ class XCrawlMetadata(object):
         self.st_atime = float(st_atime)
         self.st_mtime = float(st_mtime)
 
-class GMasterChangelogMixin(GMasterCommon):
+class GMainChangelogMixin(GMainCommon):
 
     """ changelog based change detection and syncing """
 
@@ -798,59 +798,59 @@ class GMasterChangelogMixin(GMasterCommon):
             else:
                 pbname = failure[0]['entry']
             if failure[2]['gfid_mismatch']:
-                slave_gfid = failure[2]['slave_gfid']
-                st = lstat(os.path.join(pfx, slave_gfid))
+                subordinate_gfid = failure[2]['subordinate_gfid']
+                st = lstat(os.path.join(pfx, subordinate_gfid))
                 if isinstance(st, int) and st == ENOENT:
-                    logging.info(lf('Fixing gfid mismatch in slave. Deleting'
+                    logging.info(lf('Fixing gfid mismatch in subordinate. Deleting'
                                     ' the entry', retry_count=retry_count,
                                     entry=repr(failure)))
                     #Add deletion to fix_entry_ops list
-                    if failure[2]['slave_isdir']:
+                    if failure[2]['subordinate_isdir']:
                         fix_entry_ops.append(edct('RMDIR',
-                                                  gfid=failure[2]['slave_gfid'],
+                                                  gfid=failure[2]['subordinate_gfid'],
                                                   entry=pbname))
                     else:
                         fix_entry_ops.append(edct('UNLINK',
-                                                  gfid=failure[2]['slave_gfid'],
+                                                  gfid=failure[2]['subordinate_gfid'],
                                                   entry=pbname))
                 elif not isinstance(st, int):
-                    #The file exists on master but with different name.
+                    #The file exists on main but with different name.
                     #Probabaly renamed and got missed during xsync crawl.
-                    if failure[2]['slave_isdir']:
-                        logging.info(lf('Fixing gfid mismatch in slave',
+                    if failure[2]['subordinate_isdir']:
+                        logging.info(lf('Fixing gfid mismatch in subordinate',
                                         retry_count=retry_count,
                                         entry=repr(failure)))
                         realpath = os.readlink(os.path.join(gconf.local_path,
                                                             ".glusterfs",
-                                                            slave_gfid[0:2],
-                                                            slave_gfid[2:4],
-                                                            slave_gfid))
+                                                            subordinate_gfid[0:2],
+                                                            subordinate_gfid[2:4],
+                                                            subordinate_gfid))
                         dst_entry = os.path.join(pfx, realpath.split('/')[-2],
                                                  realpath.split('/')[-1])
-                        rename_dict = edct('RENAME', gfid=slave_gfid,
+                        rename_dict = edct('RENAME', gfid=subordinate_gfid,
                                            entry=failure[0]['entry'],
                                            entry1=dst_entry, stat=st,
                                            link=None)
-                        logging.info(lf('Fixing gfid mismatch in slave. '
+                        logging.info(lf('Fixing gfid mismatch in subordinate. '
                                         'Renaming', retry_count=retry_count,
                                         entry=repr(rename_dict)))
                         fix_entry_ops.append(rename_dict)
                     else:
-                        logging.info(lf('Fixing gfid mismatch in slave. '
+                        logging.info(lf('Fixing gfid mismatch in subordinate. '
                                         ' Deleting the entry',
                                         retry_count=retry_count,
                                         entry=repr(failure)))
                         fix_entry_ops.append(edct('UNLINK',
-                                                  gfid=failure[2]['slave_gfid'],
+                                                  gfid=failure[2]['subordinate_gfid'],
                                                   entry=pbname))
-                        logging.error(lf('Entry cannot be fixed in slave due '
+                        logging.error(lf('Entry cannot be fixed in subordinate due '
                                          'to GFID mismatch, find respective '
                                          'path for the GFID and trigger sync',
-                                         gfid=slave_gfid))
+                                         gfid=subordinate_gfid))
 
         if fix_entry_ops:
             #Process deletions of entries whose gfids are mismatched
-            failures1 = self.slave.server.entry_ops(fix_entry_ops)
+            failures1 = self.subordinate.server.entry_ops(fix_entry_ops)
             if not failures1:
                 logging.info ("Sucessfully fixed entry ops with gfid mismatch")
 
@@ -881,7 +881,7 @@ class GMasterChangelogMixin(GMasterCommon):
                     logging.error("Failed to fix entry ops %s", repr(failure))
             else:
                 #Retry original entry list 5 times
-                failures = self.slave.server.entry_ops(entries)
+                failures = self.subordinate.server.entry_ops(entries)
 
             self.log_failures(failures, 'gfid', gauxpfx(), 'ENTRY')
 
@@ -975,7 +975,7 @@ class GMasterChangelogMixin(GMasterCommon):
 
                     if ty in ['RMDIR'] and not isinstance(st, int):
                         logging.info(lf('Ignoring rmdir. Directory present in '
-                                        'master', gfid=gfid, pgfid_bname=en))
+                                        'main', gfid=gfid, pgfid_bname=en))
                         continue
 
                     if not boolify(gconf.ignore_deletes):
@@ -1064,7 +1064,7 @@ class GMasterChangelogMixin(GMasterCommon):
             elif et == self.TYPE_GFID:
                 # If self.unlinked_gfids is available, then that means it is
                 # retrying the changelog second time. Do not add the GFID's
-                # to rsync job if failed previously but unlinked in master
+                # to rsync job if failed previously but unlinked in main
                 if self.unlinked_gfids and \
                    os.path.join(pfx, ec[0]) in self.unlinked_gfids:
                     logging.debug("ignoring data, since file purged interim")
@@ -1111,7 +1111,7 @@ class GMasterChangelogMixin(GMasterCommon):
             # Increment counters for Status
             self.status.inc_value("entry", len(entries))
 
-            failures = self.slave.server.entry_ops(entries)
+            failures = self.subordinate.server.entry_ops(entries)
             self.handle_entry_failures(failures, entries)
             self.status.dec_value("entry", len(entries))
 
@@ -1148,7 +1148,7 @@ class GMasterChangelogMixin(GMasterCommon):
                 meta_entries.append(edct('META', go=go[0], stat=st))
             if meta_entries:
                 self.status.inc_value("meta", len(entries))
-                failures = self.slave.server.meta_ops(meta_entries)
+                failures = self.subordinate.server.meta_ops(meta_entries)
                 self.log_failures(failures, 'go', '', 'META')
                 self.status.dec_value("meta", len(entries))
 
@@ -1218,7 +1218,7 @@ class GMasterChangelogMixin(GMasterCommon):
             # and prevents a spiraling increase of wait stubs from consuming
             # unbounded memory and resources.
 
-            # update the slave's time with the timestamp of the _last_
+            # update the subordinate's time with the timestamp of the _last_
             # changelog file time suffix. Since, the changelog prefix time
             # is the time when the changelog was rolled over, introduce a
             # tolerance of 1 second to counter the small delta b/w the
@@ -1318,7 +1318,7 @@ class GMasterChangelogMixin(GMasterCommon):
                    entry_stime=self.get_entry_stime()))
 
     def upd_entry_stime(self, stime):
-        self.slave.server.set_entry_stime(self.FLAT_DIR_HIERARCHY,
+        self.subordinate.server.set_entry_stime(self.FLAT_DIR_HIERARCHY,
                                           self.uuid,
                                           stime)
 
@@ -1344,7 +1344,7 @@ class GMasterChangelogMixin(GMasterCommon):
         node_data = node.split("@")
         node = node_data[-1]
         remote_node_ip = node.split(":")[0]
-        self.status.set_slave_node(remote_node_ip)
+        self.status.set_subordinate_node(remote_node_ip)
 
     def changelogs_batch_process(self, changes):
         changelogs_batches = []
@@ -1381,7 +1381,7 @@ class GMasterChangelogMixin(GMasterCommon):
         changes = self.changelog_agent.getchanges()
         if changes:
             if data_stime:
-                logging.info(lf("slave's time",
+                logging.info(lf("subordinate's time",
                                 stime=data_stime))
                 processed = [x for x in changes
                              if int(x.split('.')[-1]) < data_stime[0]]
@@ -1406,7 +1406,7 @@ class GMasterChangelogMixin(GMasterCommon):
         self.status = status
 
 
-class GMasterChangeloghistoryMixin(GMasterChangelogMixin):
+class GMainChangeloghistoryMixin(GMainChangelogMixin):
     def register(self, register_time, changelog_agent, status):
         self.changelog_agent = changelog_agent
         self.changelog_register_time = register_time
@@ -1457,7 +1457,7 @@ class GMasterChangeloghistoryMixin(GMasterChangelogMixin):
             changes = self.changelog_agent.history_getchanges()
             if changes:
                 if data_stime:
-                    logging.info(lf("slave's time",
+                    logging.info(lf("subordinate's time",
                                     stime=data_stime))
                     processed = [x for x in changes
                                  if int(x.split('.')[-1]) < data_stime[0]]
@@ -1493,7 +1493,7 @@ class GMasterChangeloghistoryMixin(GMasterChangelogMixin):
                 raise PartialHistoryAvailable(str(actual_end))
 
 
-class GMasterXsyncMixin(GMasterChangelogMixin):
+class GMainXsyncMixin(GMainChangelogMixin):
 
     """
     This crawl needs to be xtime based (as of now
@@ -1555,7 +1555,7 @@ class GMasterXsyncMixin(GMasterChangelogMixin):
                     self.process([item[1]], 0)
                     self.archive_and_purge_changelogs([item[1]])
                 elif item[0] == 'stime':
-                    logging.debug(lf('setting slave time',
+                    logging.debug(lf('setting subordinate time',
                                      time=item[1]))
                     self.upd_stime(item[1][1], item[1][0])
                 else:
@@ -1621,34 +1621,34 @@ class GMasterXsyncMixin(GMasterChangelogMixin):
         """check for DHTs linkto sticky bit file"""
         sticky = False
         if mo & 01000:
-            sticky = self.master.server.linkto_check(path)
+            sticky = self.main.server.linkto_check(path)
         return sticky
 
     def Xcrawl(self, path='.', xtr_root=None):
         """
         generate a CHANGELOG file consumable by process_change.
 
-        slave's xtime (stime) is _cached_ for comparisons across
+        subordinate's xtime (stime) is _cached_ for comparisons across
         the filesystem tree, but set after directory synchronization.
         """
         if path == '.':
             self.crawls += 1
         if not xtr_root:
             # get the root stime and use it for all comparisons
-            xtr_root = self.xtime('.', self.slave)
+            xtr_root = self.xtime('.', self.subordinate)
             if isinstance(xtr_root, int):
                 if xtr_root != ENOENT:
-                    logging.warn(lf("slave cluster not returning the "
+                    logging.warn(lf("subordinate cluster not returning the "
                                     "correct xtime for root",
                                     xtime=xtr_root))
                 xtr_root = self.minus_infinity
         xtl = self.xtime(path)
         if isinstance(xtl, int):
-            logging.warn("master cluster's xtime not found")
-        xtr = self.xtime(path, self.slave)
+            logging.warn("main cluster's xtime not found")
+        xtr = self.xtime(path, self.subordinate)
         if isinstance(xtr, int):
             if xtr != ENOENT:
-                logging.warn(lf("slave cluster not returning the "
+                logging.warn(lf("subordinate cluster not returning the "
                                 "correct xtime",
                                 path=path,
                                 xtime=xtr))
@@ -1663,8 +1663,8 @@ class GMasterXsyncMixin(GMasterChangelogMixin):
             return
         self.xtime_reversion_hook(path, xtl, xtr)
         logging.debug("entering " + path)
-        dem = self.master.server.entries(path)
-        pargfid = self.master.server.gfid(path)
+        dem = self.main.server.entries(path)
+        pargfid = self.main.server.gfid(path)
         if isinstance(pargfid, int):
             logging.warn(lf('skipping directory',
                             path=path))
@@ -1679,7 +1679,7 @@ class GMasterXsyncMixin(GMasterChangelogMixin):
                 continue
             if not self.need_sync(e, xte, xtr):
                 continue
-            st = self.master.server.lstat(e)
+            st = self.main.server.lstat(e)
             if isinstance(st, int):
                 logging.warn(lf('got purged in the interim',
                                 path=e))
@@ -1688,7 +1688,7 @@ class GMasterXsyncMixin(GMasterChangelogMixin):
                 logging.debug(lf('ignoring sticky bit file',
                                  path=e))
                 continue
-            gfid = self.master.server.gfid(e)
+            gfid = self.main.server.gfid(e)
             if isinstance(gfid, int):
                 logging.warn(lf('skipping entry',
                                 path=e))
@@ -1729,7 +1729,7 @@ class GMasterXsyncMixin(GMasterChangelogMixin):
                 nlink = st.st_nlink
                 nlink -= 1  # fixup backend stat link count
                 # if a file has a hardlink, create a Changelog entry as
-                # 'LINK' so the slave side will decide if to create the
+                # 'LINK' so the subordinate side will decide if to create the
                 # new entry, or to create link.
                 if nlink == 1:
                     self.write_entry_change("E",
@@ -1829,10 +1829,10 @@ class Syncer(object):
     each completed syncjob.
     """
 
-    def __init__(self, slave, sync_engine, resilient_errnos=[]):
+    def __init__(self, subordinate, sync_engine, resilient_errnos=[]):
         """spawn worker threads"""
         self.log_err = False
-        self.slave = slave
+        self.subordinate = subordinate
         self.lock = Lock()
         self.pb = PostBox()
         self.sync_engine = sync_engine

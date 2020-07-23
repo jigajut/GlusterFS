@@ -180,7 +180,7 @@ def setup_ssh_ctl(ctld, remote_addr, resource_url):
     create_manifest(fname, content)
     ssh_ctl_path = os.path.join(gconf.ssh_ctl_dir,
                                 "%s.sock" % content_md5)
-    gconf.ssh_ctl_args = ["-oControlMaster=auto", "-S", ssh_ctl_path]
+    gconf.ssh_ctl_args = ["-oControlMain=auto", "-S", ssh_ctl_path]
 
 
 def grabfile(fname, content=None):
@@ -322,7 +322,7 @@ def log_raise_exception(excont):
                                   "errors is most likely due to "
                                   "MISCONFIGURATION, please remove all "
                                   "the public keys added by geo-replication "
-                                  "from authorized_keys file in slave nodes "
+                                  "from authorized_keys file in subordinate nodes "
                                   "and run Geo-replication create "
                                   "command again.")
                     logging.error("If `gsec_create container` was used, then "
@@ -622,16 +622,16 @@ def get_changelog_log_level(lvl):
     return getattr(GlusterLogLevel, lvl, GlusterLogLevel.INFO)
 
 
-def get_master_and_slave_data_from_args(args):
-    master_name = None
-    slave_data = None
+def get_main_and_subordinate_data_from_args(args):
+    main_name = None
+    subordinate_data = None
     for arg in args:
         if arg.startswith(":"):
-            master_name = arg.replace(":", "")
+            main_name = arg.replace(":", "")
         if "::" in arg:
-            slave_data = arg.replace("ssh://", "")
+            subordinate_data = arg.replace("ssh://", "")
 
-    return (master_name, slave_data)
+    return (main_name, subordinate_data)
 
 
 def get_rsync_version(rsync_cmd):
